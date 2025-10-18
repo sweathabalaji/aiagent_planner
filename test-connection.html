@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanAI Connection Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test-result { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🌍 PlanAI Connection Test</h1>
+    
+    <div class="info test-result">
+        <strong>Testing Frontend → Backend Connection</strong><br>
+        This page will test if your React frontend can communicate with the FastAPI backend.
+    </div>
+
+    <button onclick="testConnection()">Test Backend Connection</button>
+    <button onclick="testPlanTrip()">Test Trip Planning API</button>
+
+    <div id="results"></div>
+
+    <script>
+        async function testConnection() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="info test-result">Testing connection...</div>';
+
+            try {
+                // Test health endpoint
+                const healthResponse = await fetch('/api/../health');
+                const healthData = await healthResponse.json();
+                
+                if (healthResponse.ok) {
+                    resultsDiv.innerHTML += '<div class="success test-result">✅ Backend Health Check: PASSED<br><pre>' + JSON.stringify(healthData, null, 2) + '</pre></div>';
+                } else {
+                    resultsDiv.innerHTML += '<div class="error test-result">❌ Backend Health Check: FAILED</div>';
+                }
+
+                // Test root endpoint
+                const rootResponse = await fetch('/api/..');
+                const rootData = await rootResponse.json();
+                
+                if (rootResponse.ok) {
+                    resultsDiv.innerHTML += '<div class="success test-result">✅ Backend Root Endpoint: PASSED<br><pre>' + JSON.stringify(rootData, null, 2) + '</pre></div>';
+                } else {
+                    resultsDiv.innerHTML += '<div class="error test-result">❌ Backend Root Endpoint: FAILED</div>';
+                }
+
+            } catch (error) {
+                resultsDiv.innerHTML += '<div class="error test-result">❌ Connection Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function testPlanTrip() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML += '<div class="info test-result">Testing trip planning API...</div>';
+
+            const testData = {
+                origin: "NYC",
+                destination: "LAX",
+                start_date: "2025-09-01",
+                end_date: "2025-09-03",
+                budget: 1500,
+                travellers: 1,
+                interests: ["sightseeing"]
+            };
+
+            try {
+                const response = await fetch('/api/plan_trip', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testData),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultsDiv.innerHTML += '<div class="success test-result">✅ Trip Planning API: PASSED<br>Variants generated: ' + data.variants.length + '<br><pre>' + JSON.stringify(data, null, 2).substring(0, 500) + '...</pre></div>';
+                } else {
+                    const errorText = await response.text();
+                    resultsDiv.innerHTML += '<div class="error test-result">❌ Trip Planning API: FAILED<br>Status: ' + response.status + '<br>Error: ' + errorText + '</div>';
+                }
+
+            } catch (error) {
+                resultsDiv.innerHTML += '<div class="error test-result">❌ API Test Error: ' + error.message + '</div>';
+            }
+        }
+
+        // Auto-run connection test on page load
+        window.onload = () => {
+            testConnection();
+        };
+    </script>
+</body>
+</html>
