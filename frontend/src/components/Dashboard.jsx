@@ -12,6 +12,8 @@ import {
 } from '@heroicons/react/24/outline';
 import TravelPlanner from './TravelPlanner';
 import EventPlanner from './EventPlanner';
+import LearningPlanner from './LearningPlanner';
+import BusinessPlanner from './BusinessPlanner';
 import TechPlannerComingSoon from './TechPlannerComingSoon';
 import EventPlannerComingSoon from './EventPlannerComingSoon';
 import LearningPlannerComingSoon from './LearningPlannerComingSoon';
@@ -53,9 +55,9 @@ const Dashboard = () => {
       title: 'Learning Path Planner Agent',
       description: 'Creates study plans, recommends resources, evaluates progress',
       icon: AcademicCapIcon,
-      color: 'from-orange-500 to-red-500',
+      color: 'from-purple-500 to-blue-500',
       features: ['Study Plan Creation', 'Resource Recommendations', 'Progress Tracking', 'Skill Assessment'],
-      comingSoon: true
+      comingSoon: false
     },
     {
       id: 'business',
@@ -64,7 +66,7 @@ const Dashboard = () => {
       icon: BriefcaseIcon,
       color: 'from-indigo-500 to-purple-500',
       features: ['Business Model Canvas', 'Funding Strategy', 'Market Analysis', 'Growth Planning'],
-      comingSoon: true
+      comingSoon: false
     }
   ];
 
@@ -152,10 +154,11 @@ const Dashboard = () => {
                 <ArrowRightIcon className="h-5 w-5 mr-2 rotate-180" />
                 Back to Dashboard
               </button>
+              <h1 className="text-xl font-semibold text-gray-900">Learning Path Planner Agent</h1>
             </div>
           </div>
         </div>
-        <LearningPlannerComingSoon />
+        <LearningPlanner />
       </div>
     );
   }
@@ -173,10 +176,11 @@ const Dashboard = () => {
                 <ArrowRightIcon className="h-5 w-5 mr-2 rotate-180" />
                 Back to Dashboard
               </button>
+              <h1 className="text-xl font-semibold text-gray-900">Business Startup Planner Agent</h1>
             </div>
           </div>
         </div>
-        <BusinessPlannerComingSoon />
+        <BusinessPlanner />
       </div>
     );
   }

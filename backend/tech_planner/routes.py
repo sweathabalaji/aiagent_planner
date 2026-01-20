@@ -6,8 +6,10 @@ import json
 import asyncio
 import concurrent.futures
 from langchain.schema import HumanMessage, SystemMessage
-from langchain.agents import initialize_agent, AgentType, Tool
-from langchain.memory import ConversationBufferMemory
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.tools import Tool
+from langchain.prompts import PromptTemplate
+from langchain import hub
 from utils.llm import get_chat_llm
 from utils.tavily_search import search_tech_research
 import asyncio
@@ -50,7 +52,7 @@ async def create_tech_project_plan(request: TechProjectRequest):
         logging.info(f"Creating AI-powered tech project plan for: {request.project_name}")
         
         # Initialize ReAct Agent with research tools
-        agent = create_tech_planning_agent()
+        agent_executor = create_tech_planning_agent()
         
         # Research and plan using AI agent with enhanced prompting
         agent_input = f"""
@@ -82,22 +84,25 @@ async def create_tech_project_plan(request: TechProjectRequest):
         Please conduct thorough research using all available tools and provide detailed, actionable recommendations.
         """
         
-        # Run the agent with error handling
+        # Run the agent with error handling using modern invoke method
         try:
             logging.info("Running AI agent with research tools...")
-            agent_result = agent.run(agent_input)
-            logging.info(f"Agent completed successfully. Response length: {len(str(agent_result))}")
+            agent_response = agent_executor.invoke({"input": agent_input})
+            
+            # Extract the output from the response
+            if isinstance(agent_response, dict):
+                agent_result = agent_response.get("output", "")
+                intermediate_steps = agent_response.get("intermediate_steps", [])
+                logging.info(f"Agent completed successfully. Response length: {len(str(agent_result))}")
+                logging.info(f"Intermediate steps: {len(intermediate_steps)}")
+            else:
+                agent_result = str(agent_response)
+                logging.info(f"Agent completed successfully. Response length: {len(agent_result)}")
+                
         except Exception as agent_error:
-            logging.warning(f"Agent execution failed: {str(agent_error)}")
-            # Try using invoke method as alternative
-            try:
-                agent_response = agent.invoke({"input": agent_input})
-                agent_result = agent_response.get("output", str(agent_response))
-                logging.info("Agent completed using invoke method")
-            except Exception as invoke_error:
-                logging.error(f"Agent invoke also failed: {str(invoke_error)}")
-                # Enhanced fallback response with research-like content
-                agent_result = f"""Final Answer: I'll provide a comprehensive project plan for {request.project_name}. Based on the requirements, this is a {request.complexity} {request.project_type} project using {', '.join(request.tech_stack)} technology stack.
+            logging.error(f"Agent execution failed: {str(agent_error)}")
+            # Enhanced fallback response with research-like content
+            agent_result = f"""Final Answer: I'll provide a comprehensive project plan for {request.project_name}. Based on the requirements, this is a {request.complexity} {request.project_type} project using {', '.join(request.tech_stack)} technology stack.
 
 PROJECT ABSTRACT:
 {request.project_description}
@@ -234,18 +239,44 @@ def create_tech_planning_agent():
         )
     ]
     
-    # Initialize memory for conversation context
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    # Get ReAct prompt from hub (this is the modern way)
+    try:
+        prompt = hub.pull("hwchase17/react")
+    except Exception:
+        # Fallback prompt if hub is not available
+        from langchain.prompts import PromptTemplate
+        template = """Answer the following questions as best you can. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+Thought:{agent_scratchpad}"""
+        
+        prompt = PromptTemplate.from_template(template)
     
-    # Create ReAct agent with enhanced prompting
-    agent = initialize_agent(
+    # Create ReAct agent with modern approach
+    agent = create_react_agent(llm, tools, prompt)
+    
+    # Create agent executor
+    agent_executor = AgentExecutor(
+        agent=agent,
         tools=tools,
-        llm=llm,
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        memory=memory,
         verbose=True,
-        max_iterations=8,  # Increased iterations
-        max_execution_time=120,  # 2 minutes timeout
+        max_iterations=8,
+        max_execution_time=120,
         handle_parsing_errors=True,
         return_intermediate_steps=True,
         agent_kwargs={
@@ -253,7 +284,7 @@ def create_tech_planning_agent():
         }
     )
     
-    return agent
+    return agent_executor
 
 def research_tech_trends(query: str) -> str:
     """

@@ -12,6 +12,8 @@ from utils.schemas import TravelRequest, TravelResponse
 from agents.planner import create_plan_agent
 from tech_planner.routes import router as tech_router
 from event_planner.routes import router as event_router
+from learning_planner.routes import router as learning_router
+from business_planner.routes import router as business_router
 
 app = FastAPI(title="PlanAI Multi-Agent Planner (FastAPI + LangChain + Groq)")
 
@@ -25,6 +27,8 @@ app.add_middleware(
 # Include all planner routes
 app.include_router(tech_router)
 app.include_router(event_router)
+app.include_router(learning_router)
+app.include_router(business_router)
 
 @app.get("/")
 async def root():
@@ -40,6 +44,10 @@ async def root():
             "event_templates": "/api/event/templates (GET)",
             "event_venues": "/api/event/venues/{location} (GET)",
             "event_vendors": "/api/event/vendors/{location} (GET)",
+            "learning_planner": "/api/learning/plan (POST)",
+            "learning_health": "/api/learning/health (GET)",
+            "business_planner": "/api/business/plan (POST)",
+            "business_health": "/api/business/health (GET)",
             "docs": "/docs",
             "openapi": "/openapi.json"
         },

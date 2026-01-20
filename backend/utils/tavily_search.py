@@ -14,6 +14,32 @@ load_dotenv()
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY) if TAVILY_API_KEY else None
 
+async def tavily_search(query: str, max_results: int = 5):
+    """
+    Generic Tavily search function for any query
+    """
+    if not tavily_client:
+        logging.error("Tavily API key not configured")
+        return []
+    
+    try:
+        # Run the synchronous Tavily search in a thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: tavily_client.search(
+                query=query, 
+                search_depth="basic",
+                max_results=max_results
+            )
+        )
+        
+        return response.get("results", [])
+    
+    except Exception as e:
+        logging.error(f"Tavily search failed: {e}")
+        return []
+
 async def search_travel_info(query: str, max_results: int = 5):
     """
     Search for travel-related information using Tavily API
@@ -82,6 +108,85 @@ async def search_tech_research(query: str, max_results: int = 5):
     
     except Exception as e:
         logging.error(f"Tech research search failed: {e}")
+        raise
+
+async def search_learning_resources(query: str, resource_type: str = "courses", max_results: int = 5):
+    """
+    Search for learning resources (courses, books, tutorials, etc.) using Tavily API
+    Specifically designed for educational content, NOT travel information
+    """
+    if not tavily_client:
+        logging.error("Tavily API key not configured")
+        raise RuntimeError("Tavily API not available")
+    
+    try:
+        # Create learning-specific search query
+        if resource_type == "courses":
+            search_query = f"{query} online courses tutorials lessons training"
+            domains = [
+                "coursera.org", "udemy.com", "edx.org", "udacity.com", "pluralsight.com",
+                "linkedin.com/learning", "skillshare.com", "khanacademy.org", "codecademy.com",
+                "freecodecamp.org", "datacamp.com", "treehouse.com", "lynda.com",
+                "youtube.com", "educative.io", "egghead.io", "frontendmasters.com",
+                "laracasts.com", "masterclass.com", "brilliant.org", "futurelearn.com"
+            ]
+        elif resource_type == "books":
+            search_query = f"{query} books textbooks guides reading materials"
+            domains = [
+                "amazon.com", "goodreads.com", "springer.com", "oreilly.com", "manning.com",
+                "packtpub.com", "apress.com", "nostarch.com", "pragprog.com", "wiley.com",
+                "pearson.com", "cambridge.org", "google.com/books", "bookauthority.org",
+                "reddit.com/r/books", "libgen.is", "archive.org"
+            ]
+        elif resource_type == "tutorials":
+            search_query = f"{query} tutorials how to learn guide step by step"
+            domains = [
+                "medium.com", "dev.to", "hackernoon.com", "tutorialspoint.com", "w3schools.com",
+                "geeksforgeeks.org", "realpython.com", "javatpoint.com", "baeldung.com",
+                "digitalocean.com", "freeCodeCamp.org", "css-tricks.com", "smashingmagazine.com",
+                "youtube.com", "github.com", "stackoverflow.com"
+            ]
+        elif resource_type == "practice":
+            search_query = f"{query} practice exercises projects hands-on coding challenges"
+            domains = [
+                "leetcode.com", "hackerrank.com", "codewars.com", "exercism.io", "codesignal.com",
+                "topcoder.com", "codeforces.com", "kaggle.com", "projecteuler.net",
+                "github.com", "replit.com", "codepen.io", "codesandbox.io", "glitch.com"
+            ]
+        elif resource_type == "communities":
+            search_query = f"{query} community forum discussion group learning network"
+            domains = [
+                "reddit.com", "stackoverflow.com", "discord.com", "slack.com", "github.com",
+                "dev.to", "hashnode.com", "indie hackers.com", "meetup.com", "facebook.com/groups",
+                "linkedin.com", "twitter.com", "quora.com", "spectrum.chat"
+            ]
+        elif resource_type == "tools":
+            search_query = f"{query} tools software platforms IDE libraries frameworks"
+            domains = [
+                "github.com", "gitlab.com", "npmjs.com", "pypi.org", "maven.org",
+                "producthunt.com", "alternativeto.net", "stackshare.io", "slant.co",
+                "awesome-list.com", "awesomeopensource.com"
+            ]
+        else:
+            search_query = f"{query} learning resources education training"
+            domains = []
+        
+        # Run the synchronous Tavily search in a thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: tavily_client.search(
+                query=search_query, 
+                search_depth="advanced",
+                max_results=max_results,
+                include_domains=domains if domains else None
+            )
+        )
+        
+        return response.get("results", [])
+    
+    except Exception as e:
+        logging.error(f"Learning resource search failed: {e}")
         raise
 
 def extract_price_from_text(text: str) -> float:

@@ -1012,3 +1012,9 @@ If you encounter any issues or have questions:
 ---
 
 **Happy Planning! ✈️🏨🗺️🎉💻🚀**
+
+
+
+cd "/Users/sweatha/Desktop/Multi AI agent Planner/backend" && "/Users/sweatha/Desktop/Multi AI agent Planner/venv/bin/python" -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+
+cd "/Users/sweatha/Desktop/Multi AI agent Planner/frontend" && npm run dev
