@@ -1015,6 +1015,6 @@ If you encounter any issues or have questions:
 
 
 
-cd "/Users/sweatha/Desktop/Multi AI agent Planner/backend" && "/Users/sweatha/Desktop/Multi AI agent Planner/venv/bin/python" -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+cd "/Users/sweatha/Downloads/FINAL YEAR PROJECT/Multi AI agent Planner/backend" && source ../venv/bin/activate && uvicorn app:app --reload --port 8000
 
-cd "/Users/sweatha/Desktop/Multi AI agent Planner/frontend" && npm run dev
+cd "/Users/sweatha/Downloads/FINAL YEAR PROJECT/Multi AI agent Planner/frontend" && npm run dev

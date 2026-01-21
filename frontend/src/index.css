@@ -36,3 +36,46 @@
     background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 25%, #1e40af 50%, #0ea5e9 75%, #0284c7 100%);
   }
 }
+
+/* Print Styles for Certificate */
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Hide elements with no-print class */
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+  
+  /* Show only certificate container and its contents */
+  .certificate-container,
+  .certificate-container * {
+    visibility: visible !important;
+  }
+  
+  /* Position certificate at top of page */
+  .certificate-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 5mm !important;
+  }
+  
+  /* Ensure colors print correctly */
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  
+  /* Page settings */
+  @page {
+    size: A4 portrait;
+    margin: 5mm;
+  }
+}

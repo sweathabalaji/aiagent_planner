@@ -161,11 +161,15 @@ Return ONLY a valid JSON object with this structure:
         # Step 4: Generate progress tracking plan
         tracking = self._create_progress_tracking(learning_plan, duration_weeks)
         
+        # Step 5: Generate todo list from learning plan
+        todo_list = self._create_todo_list(learning_plan, schedule)
+        
         return {
             "learning_plan": learning_plan,
             "resources": resources,
             "schedule": schedule,
             "progress_tracking": tracking,
+            "todo_list": todo_list,
             "metadata": {
                 "created_at": datetime.now().isoformat(),
                 "topic": topic,
@@ -471,6 +475,154 @@ Return ONLY valid JSON:
                     ]
                 }
             }
+
+
+    def _create_todo_list(self, plan: dict, schedule: dict) -> dict:
+        """Create a comprehensive todo list from the learning plan and schedule."""
+        todo_items = []
+        todo_id = 1
+        
+        phases = plan.get("phases", [])
+        weekly_schedule = schedule.get("weekly_schedule", [])
+        
+        # Create todos from phases and schedule
+        for week_data in weekly_schedule:
+            week_num = week_data.get("week", 1)
+            focus = week_data.get("focus", "")
+            topics = week_data.get("topics", [])
+            milestone = week_data.get("milestone", "")
+            
+            # Create main milestone todo for the week
+            todo_items.append({
+                "id": todo_id,
+                "week": week_num,
+                "title": f"Week {week_num}: {focus}",
+                "description": milestone,
+                "completed": False,
+                "type": "milestone",
+                "subtasks": []
+            })
+            todo_id += 1
+            
+            # Create subtask todos for each topic
+            for topic in topics[:3]:  # Limit to 3 topics per week
+                todo_items.append({
+                    "id": todo_id,
+                    "week": week_num,
+                    "title": f"Learn: {topic}",
+                    "description": f"Study and understand {topic}",
+                    "completed": False,
+                    "type": "learning",
+                    "subtasks": []
+                })
+                todo_id += 1
+        
+        # Add project-based todos from phases
+        for phase in phases:
+            project = phase.get("project", "")
+            if project:
+                todo_items.append({
+                    "id": todo_id,
+                    "week": None,
+                    "title": f"Complete Project: {phase.get('phase_name', '')}",
+                    "description": project,
+                    "completed": False,
+                    "type": "project",
+                    "subtasks": []
+                })
+                todo_id += 1
+        
+        return {
+            "items": todo_items,
+            "total_count": len(todo_items),
+            "completed_count": 0
+        }
+    
+    def generate_mcq_assessment(self, plan: dict, completed_topics: list) -> dict:
+        """Generate MCQ assessment based on completed learning topics."""
+        
+        topic = plan.get("overview", {}).get("title", "Learning Path")
+        phases = plan.get("phases", [])
+        
+        # Build context from completed topics
+        concepts_covered = []
+        for phase in phases:
+            concepts_covered.extend(phase.get("concepts", []))
+        
+        assessment_prompt = f"""Create a comprehensive MCQ assessment for a learning path on {topic}.
+
+Concepts covered: {', '.join(concepts_covered[:20])}
+
+Generate 10 multiple-choice questions that test:
+- Understanding of key concepts
+- Practical application
+- Problem-solving abilities
+- Best practices
+
+Return ONLY valid JSON:
+{{
+    "title": "Assessment title",
+    "description": "Brief description",
+    "passing_score": 70,
+    "questions": [
+        {{
+            "id": 1,
+            "question": "Question text here?",
+            "options": [
+                {{"id": "a", "text": "Option A"}},
+                {{"id": "b", "text": "Option B"}},
+                {{"id": "c", "text": "Option C"}},
+                {{"id": "d", "text": "Option D"}}
+            ],
+            "correct_answer": "a",
+            "explanation": "Why this is correct"
+        }}
+    ]
+}}"""
+
+        try:
+            assessment_response = self.llm.invoke([
+                SystemMessage(content="You are an expert assessment creator. Return only valid JSON."),
+                HumanMessage(content=assessment_prompt)
+            ])
+            
+            content = assessment_response.content.strip()
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+            
+            assessment = json.loads(content)
+            return assessment
+            
+        except Exception as e:
+            print(f"Failed to generate MCQ assessment: {e}")
+            # Return a default assessment structure
+            return {
+                "title": f"{topic} - Final Assessment",
+                "description": "Test your knowledge of the concepts you've learned",
+                "passing_score": 70,
+                "questions": []
+            }
+    
+    def generate_certificate(self, user_name: str, plan: dict, assessment_score: int) -> dict:
+        """Generate a completion certificate."""
+        
+        topic = plan.get("overview", {}).get("title", "Learning Path")
+        duration = plan.get("overview", {}).get("total_hours", 0)
+        completion_date = datetime.now().strftime("%B %d, %Y")
+        
+        return {
+            "recipient_name": user_name,
+            "course_title": topic,
+            "completion_date": completion_date,
+            "total_hours": duration,
+            "assessment_score": assessment_score,
+            "certificate_id": f"CERT-{datetime.now().strftime('%Y%m%d')}-{hash(user_name) % 10000:04d}",
+            "skills_acquired": [phase.get("phase_name", "") for phase in plan.get("phases", [])],
+            "issued_by": "Multi AI Agent Planner - Learning Path System"
+        }
 
 
 async def create_learning_path(topic: str, skill_level: str, duration_weeks: int, 

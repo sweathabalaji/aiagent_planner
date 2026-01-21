@@ -1,12 +1,11 @@
 import os
-from motor.motor_asyncio import AsyncIOMotorClient
 import logging
 
 logger = logging.getLogger(__name__)
 
+# MongoDB is no longer required - we use SQLAlchemy now
+# This file is kept for backward compatibility with other planners
 MONGO_URI = os.getenv("MONGODB_URI")
-if not MONGO_URI:
-    raise RuntimeError("MONGODB_URI missing in env")
 
 # Don't initialize the client at module level - do it lazily
 _client = None
@@ -15,11 +14,21 @@ _db = None
 def get_db():
     """Get database connection, initializing if needed"""
     global _client, _db
+    
+    # MongoDB is optional now
+    if not MONGO_URI:
+        logger.warning("MongoDB not configured - using SQLite instead")
+        return None
+    
     if _client is None:
         try:
+            from motor.motor_asyncio import AsyncIOMotorClient
             _client = AsyncIOMotorClient(MONGO_URI)
             _db = _client.get_default_database()
             logger.info("MongoDB connection initialized")
+        except ImportError:
+            logger.warning("motor package not installed - MongoDB unavailable")
+            return None
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
             # Return None to indicate MongoDB is not available

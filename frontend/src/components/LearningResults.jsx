@@ -12,14 +12,41 @@ import {
   ArrowRightIcon,
   SparklesIcon
 } from '@heroicons/react/24/outline';
+import { useState, useEffect, useRef } from 'react';
+import TodoList from './TodoList';
+import MCQAssessment from './MCQAssessment';
+import Certificate from './Certificate';
 
 export default function LearningResults({ learningPath }) {
-  const { learning_plan, resources, schedule, progress_tracking, metadata } = learningPath;
+  const { learning_plan, resources, schedule, progress_tracking, metadata, todo_list, session_id } = learningPath;
   const overview = learning_plan?.overview || {};
   const phases = learning_plan?.phases || [];
   const weeklySchedule = schedule?.weekly_schedule || [];
   const allResources = resources?.all_resources || {};
   const recommended = resources?.recommended || {};
+
+  // State for managing workflow
+  const [showTodoList, setShowTodoList] = useState(true);
+  const [showAssessment, setShowAssessment] = useState(false);
+  const [showCertificate, setShowCertificate] = useState(false);
+  const [assessmentData, setAssessmentData] = useState(null);
+  const assessmentRef = useRef(null);
+
+  const handleTodosCompleted = () => {
+    console.log('handleTodosCompleted called - showing assessment');
+    setShowAssessment(true);
+    // Scroll to assessment section after a brief delay
+    setTimeout(() => {
+      assessmentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+  };
+
+  const handleAssessmentComplete = (results) => {
+    setAssessmentData(results);
+    if (results.passed) {
+      setShowCertificate(true);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -312,6 +339,34 @@ export default function LearningResults({ learningPath }) {
           </h2>
           <p className="text-gray-800 text-lg">{learning_plan.final_project}</p>
         </div>
+      )}
+
+      {/* Todo List Section */}
+      {showTodoList && todo_list && session_id && (
+        <TodoList 
+          todoList={todo_list} 
+          sessionId={session_id}
+          onAllCompleted={handleTodosCompleted}
+        />
+      )}
+
+      {/* MCQ Assessment Section */}
+      {console.log('Rendering check - showAssessment:', showAssessment, 'session_id:', session_id)}
+      {showAssessment && session_id && (
+        <div ref={assessmentRef}>
+          <MCQAssessment 
+            sessionId={session_id}
+            onAssessmentComplete={handleAssessmentComplete}
+          />
+        </div>
+      )}
+
+      {/* Certificate Section */}
+      {showCertificate && session_id && assessmentData && (
+        <Certificate 
+          sessionId={session_id}
+          assessmentScore={assessmentData.score}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import LearningForm from './LearningForm';
 import LearningResults from './LearningResults';
 import LoadingSpinner from './LoadingSpinner';
+import PastLearnings from './PastLearnings';
 import { AcademicCapIcon } from '@heroicons/react/24/outline';
 import { BookOpen, Brain, Search } from 'lucide-react';
 
@@ -9,11 +10,13 @@ export default function LearningPlanner() {
   const [isLoading, setIsLoading] = useState(false);
   const [learningPath, setLearningPath] = useState(null);
   const [error, setError] = useState(null);
+  const [showPastLearnings, setShowPastLearnings] = useState(false);
 
   const handleSubmit = async (formData) => {
     setIsLoading(true);
     setError(null);
     setLearningPath(null);
+    setShowPastLearnings(false);
 
     try {
       const response = await fetch('http://localhost:8000/api/learning/plan', {
@@ -39,9 +42,21 @@ export default function LearningPlanner() {
     }
   };
 
+  const handleLoadLearning = (learning) => {
+    setLearningPath(learning);
+    setShowPastLearnings(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleReset = () => {
     setLearningPath(null);
     setError(null);
+    setShowPastLearnings(false);
+  };
+
+  const togglePastLearnings = () => {
+    setShowPastLearnings(!showPastLearnings);
+    setLearningPath(null);
   };
 
   return (
@@ -70,12 +85,31 @@ export default function LearningPlanner() {
               <span>Progress Tracking</span>
             </div>
           </div>
+          
+          {/* View Past Learnings Button */}
+          {!learningPath && !isLoading && (
+            <div className="mt-6">
+              <button
+                onClick={togglePastLearnings}
+                className="bg-white text-purple-600 px-6 py-2 rounded-lg font-semibold border-2 border-purple-600 hover:bg-purple-50 transition-all"
+              >
+                {showPastLearnings ? 'Create New Learning Path' : 'View Past Learnings'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Main Content */}
-        {!learningPath && !isLoading && (
+        {!learningPath && !isLoading && !showPastLearnings && (
           <div className="max-w-4xl mx-auto">
             <LearningForm onSubmit={handleSubmit} isLoading={isLoading} />
+          </div>
+        )}
+
+        {/* Past Learnings */}
+        {showPastLearnings && !learningPath && !isLoading && (
+          <div className="max-w-6xl mx-auto">
+            <PastLearnings onLoadLearning={handleLoadLearning} />
           </div>
         )}
 
