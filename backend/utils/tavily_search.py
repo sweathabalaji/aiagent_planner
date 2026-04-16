@@ -232,6 +232,195 @@ def extract_price_from_text(text: str) -> float:
     
     return None
 
+
+# ---------------------------------------------------------------------------
+# Hotel name / price validation (Tavily snippets are often noisy)
+# ---------------------------------------------------------------------------
+
+_INVALID_HOTEL_NAME_SUBSTRINGS = (
+    "operators available", "looking for a", "re looking", "the cheapest",
+    "cheapest areas", "compared to the", "average price", "exceptional value",
+    "631 operators", "choose from for", "for cheap hotels", "hotel in ",
+    "full service", "with full", "updated prices", "reviews on", "book on",
+    "save up to", "discount of", "percent off", "star rating based",
+    "this hotel", "hotel offers", "hotel room in", "for money compared",
+    "value for money", "room in mumbai", "areas for cheap",
+)
+
+_HOTEL_BRAND_WORDS = (
+    "taj", "marriott", "hilton", "hyatt", "oberoi", "itc", "lemon", "sarovar",
+    "radisson", "westin", "sheraton", "novotel", "ibis", "accor", "holiday inn",
+    "courtyard", "four seasons", "st regis", "jw marriott", "conrad", "trident",
+    "leela", "park ", "grand hyatt", "sofitel", "pullman", "mercure", "fabhotel",
+    "treebo", "oyo", "zostel", "hostel", "residency", "palace", "resort",
+)
+
+
+def _is_indian_destination(destination: str) -> bool:
+    d = (destination or "").lower()
+    indian = (
+        "mumbai", "delhi", "bangalore", "bengaluru", "chennai", "hyderabad", "kolkata",
+        "pune", "goa", "jaipur", "ahmedabad", "kochi", "kerala", "india", "navi mumbai",
+        "thane", "gurgaon", "gurugram", "noida", "lucknow", "indore", "surat",
+    )
+    return any(x in d for x in indian)
+
+
+def is_valid_hotel_name(name: str) -> bool:
+    """
+    Reject sentence fragments and SEO garbage that regex sometimes captures from snippets.
+    """
+    if not name or not isinstance(name, str):
+        return False
+    n = name.strip()
+    if len(n) < 3 or len(n) > 72:
+        return False
+    words = n.split()
+    if len(words) > 12:
+        return False
+    lower = n.lower()
+    for bad in _INVALID_HOTEL_NAME_SUBSTRINGS:
+        if bad in lower:
+            return False
+    # Incomplete marketing fragments
+    if lower.endswith((" with", " for", " to", " and", " the", " a", " in")):
+        return False
+    # Property-type word anywhere (Booking titles: "Bloom Hotel Worli")
+    has_property_type = bool(
+        re.search(
+            r"\b(hotel|resort|inn|lodge|palace|suites|hostel|guesthouse|guest\s+house|by\s+marriott)\b",
+            lower,
+        )
+    )
+    looks_like_title = n[0].isupper() if n else False
+    ends_hotelish = bool(
+        re.search(
+            r"\b(hotel|resort|inn|lodge|palace|suites|hostel|guest\s*house|by\s+marriott)\s*$",
+            n,
+            re.I,
+        )
+    )
+    has_brand = any(b in lower for b in _HOTEL_BRAND_WORDS)
+    if has_property_type and len(words) <= 14:
+        return True
+    if not (ends_hotelish or has_brand or (looks_like_title and len(words) <= 6)):
+        if len(words) <= 4 and looks_like_title and not lower.startswith(("the cheapest", "a cheap", "cheap ")):
+            return True
+        return False
+    return True
+
+
+def extract_hotel_name_from_result_title(title: str, url: str = "") -> str:
+    """
+    Booking / TripAdvisor / Agoda titles usually put the property name first.
+    """
+    if not title:
+        return ""
+    t = title.strip()
+    t = re.sub(r"\s+", " ", t)
+    # Split on common OTA suffixes
+    for sep in (
+        " - Booking.com", " | Booking.com", " – Booking.com", " on Booking.com",
+        " - Hotels.com", " | Hotels.com", " - Agoda", " | Agoda",
+        " - Tripadvisor", " | Tripadvisor", " - TripAdvisor",
+        " - MakeMyTrip", " | MakeMyTrip", " - Expedia", " | Expedia",
+        " - Goibibo", " | Goibibo",
+    ):
+        if sep.lower() in t.lower():
+            idx = t.lower().index(sep.lower())
+            t = t[:idx].strip()
+            break
+    m = re.match(r"^(.+?)\s*[-–—]\s*(?:Updated|Reviews|Prices|Book)", t, re.I)
+    if m:
+        t = m.group(1).strip()
+    # Strip trailing city-only noise
+    t = re.sub(r"\s*[,|]\s*India\s*$", "", t, flags=re.I).strip()
+    return t
+
+
+def extract_hotel_price_per_night_inr(text: str, title: str, destination: str) -> float:
+    """
+    Prefer explicit 'per night' prices; ignore tiny numbers (discount %, room count).
+    """
+    blob = f"{title} {text}"
+    # Strong patterns first (INR per night)
+    night_patterns = [
+        r"₹\s*([0-9][0-9,]{2,})\s*(?:/|\s)*\s*(?:per\s*)?night",
+        r"(?:Rs\.?|INR)\s*([0-9][0-9,]{2,})\s*(?:/|\s)*\s*(?:per\s*)?night",
+        r"([0-9][0-9,]{2,})\s*₹\s*(?:/|\s)*\s*(?:per\s*)?night",
+        r"per\s*night[:\s]*₹\s*([0-9][0-9,]{2,})",
+        r"per\s*night[:\s]*(?:Rs\.?|INR)\s*([0-9][0-9,]{2,})",
+        r"from\s*₹\s*([0-9][0-9,]{2,})\s*(?:per\s*)?night",
+    ]
+    candidates = []
+    for pat in night_patterns:
+        for m in re.finditer(pat, blob, re.I):
+            try:
+                v = float(m.group(1).replace(",", ""))
+                if v > 0:
+                    candidates.append(v)
+            except ValueError:
+                continue
+    if candidates:
+        # Use median-ish: prefer values that look like nightly rates
+        good = [c for c in candidates if _plausible_hotel_nightly_inr(c, destination)]
+        pool = good if good else candidates
+        return float(sorted(pool)[len(pool) // 2])
+
+    # Fallback: all ₹ amounts, take plausible nightly range only
+    all_inr = []
+    for m in re.finditer(r"₹\s*([0-9][0-9,]{2,}(?:\.\d{2})?)", blob):
+        try:
+            all_inr.append(float(m.group(1).replace(",", "")))
+        except ValueError:
+            continue
+    plausible = [x for x in all_inr if _plausible_hotel_nightly_inr(x, destination)]
+    if plausible:
+        return float(sorted(plausible)[len(plausible) // 2])
+
+    # Last resort: generic extractor only if plausible
+    p = extract_price_from_text(blob)
+    if p and _plausible_hotel_nightly_inr(p, destination):
+        return p
+    return None
+
+
+def _plausible_hotel_nightly_inr(price: float, destination: str) -> bool:
+    """Filter out ₹14, ₹2 (discount noise) and million-rupee OCR errors."""
+    if price is None or price <= 0:
+        return False
+    if _is_indian_destination(destination):
+        # Budget rooms rarely under ₹400/night on OTAs; ignore garbage < 250
+        if price < 250:
+            return False
+        if price > 250_000:
+            return False
+        return True
+    # International: allow wider band in local currency mixed in snippets
+    if price < 15:
+        return False
+    if price > 50_000:
+        return False
+    return True
+
+
+def _plausible_flight_price_inr(price: float, origin: str, destination: str) -> bool:
+    """One-way economy fare sanity check for INR-heavy snippets."""
+    if price is None or price <= 0:
+        return False
+    if _is_indian_destination(origin) or _is_indian_destination(destination):
+        if price < 400:
+            return False
+        if price > 150_000:
+            return False
+        return True
+    if price < 30:
+        return False
+    if price > 500_000:
+        return False
+    return True
+
+
 async def search_flights(origin: str, destination: str, departure_date: str, return_date: str = None):
     """
     Search for flight information using Tavily - only returns real results
@@ -265,15 +454,21 @@ async def search_flights(origin: str, destination: str, departure_date: str, ret
                 flight_details = extract_flight_details(content, title, origin, destination)
                 
                 for j, flight_info in enumerate(flight_details):
-                    # Extract real price
-                    price = extract_price_from_text(content + " " + title)
-                    
+                    # Prefer real snippet price when in a plausible range; else heuristic
+                    raw_price = extract_price_from_text(content + " " + title)
+                    airline_guess = flight_info.get("airline", determine_airline(content))
+                    heuristic = get_realistic_flight_price(origin, destination, airline_guess, departure_date, j)
+                    if raw_price and _plausible_flight_price_inr(raw_price, origin, destination):
+                        final_price = round(raw_price)
+                    else:
+                        final_price = round(heuristic)
+
                     # Only add flights with actual price data
-                    if price and price > 0:
+                    if final_price and final_price > 0:
                         all_flights.append({
                             "id": f"tavily_flight_{len(all_flights)+1}",
-                            "airline": flight_info.get("airline", determine_airline(content)),
-                            "price": get_realistic_flight_price(origin, destination, flight_info.get("airline", ""), departure_date, j),
+                            "airline": airline_guess,
+                            "price": final_price,
                             "departure": flight_info.get("departure", "Check airline website"),
                             "duration": flight_info.get("duration", "Check airline website"),
                             "aircraft": flight_info.get("aircraft", ""),
@@ -747,127 +942,152 @@ def determine_airline(text: str):
 
 async def search_hotels(destination: str, checkin_date: str, checkout_date: str, adults: int = 2):
     """
-    Search for detailed hotel information using Tavily - Only returns real search results
+    Search for hotel options via Tavily. Filters out sentence-fragment "names" and bogus nightly rates.
     """
     all_hotels = []
-    
-    # Create search queries for international destinations without bias
+    nights = calculate_nights(checkin_date, checkout_date)
+
     queries = [
-        f"hotels {destination} booking accommodation prices {checkin_date} Booking.com Agoda Expedia",
-        f"best hotels stay {destination} room rates per night Hotels.com Marriott Hilton",
-        f"{destination} hotel accommodation check in {checkin_date} prices deals"
+        f'"{destination}" hotel Booking.com price per night {checkin_date}',
+        f"{destination} hotels per night rupees {checkin_date} {checkout_date} Agoda",
+        f"best hotels {destination} room rate per night Marriott Hilton Taj",
     ]
-    
+
     for query in queries:
         try:
-            results = await search_travel_info(query, max_results=3)
-            
-            for i, result in enumerate(results):
-                title = result.get("title", "")
-                content = result.get("content", "")
-                url = result.get("url", "")
-                
-                hotel_details = extract_hotel_details(content, title, destination)
-                
-                for j, hotel_info in enumerate(hotel_details[:2]):
-                    hotel_name = hotel_info.get("name", extract_hotel_name(title))
-                    
-                    # Extract price from real search results only
-                    price = hotel_info.get("price") or extract_price_from_text(content + " " + title)
-                    
-                    # Only add hotels with real pricing data
-                    if price and price > 0:
-                        nights = calculate_nights(checkin_date, checkout_date)
-                        total_price = price * nights
-                        
-                        all_hotels.append({
-                            "id": f"tavily_hotel_{len(all_hotels)+1}",
-                            "provider": "tavily_search",
-                            "name": hotel_name,
-                            "price": price,
-                            "price_per_night": price,
-                            "total_price": total_price,
-                            "currency": get_destination_currency(destination),
-                            "title": title,
-                            "url": url,
-                            "source": "Tavily Web Search",
-                            "location": hotel_info.get("location", f"Central {destination}"),
-                            "rating": hotel_info.get("rating", 4.0 + (j * 0.1)),
-                            "amenities": hotel_info.get("amenities", get_amenities_by_category(hotel_info.get("category", "mid-range"))),
-                            "room_type": hotel_info.get("room_type", "Deluxe Room"),
-                            "category": hotel_info.get("category", "mid-range"),
-                            "address": hotel_info.get("address", f"{hotel_info.get('location', 'Central')}, {destination}"),
-                            "raw": result
-                        })
-                        
-                        if len(all_hotels) >= 8:
+            results = await search_travel_info(query, max_results=4)
+
+            for result in results:
+                title = result.get("title", "") or ""
+                content = result.get("content", "") or ""
+                url = result.get("url", "") or ""
+
+                # 1) Property name from OTA page title (most reliable)
+                name = extract_hotel_name_from_result_title(title, url)
+                if not name:
+                    # 2) Regex extract only if it passes validation
+                    for h in extract_hotel_details(content, title, destination)[:1]:
+                        cand = (h.get("name") or "").strip()
+                        if is_valid_hotel_name(cand):
+                            name = cand
                             break
-                            
-                if len(all_hotels) >= 8:
+
+                if not is_valid_hotel_name(name):
+                    continue
+
+                price = extract_hotel_price_per_night_inr(content, title, destination)
+                if not price:
+                    continue
+
+                rating = 4.0
+                m_star = re.search(r"(\d+(?:\.\d+)?)\s*(?:out of|/)\s*5", content + title, re.I)
+                if m_star:
+                    try:
+                        rating = min(5.0, float(m_star.group(1)))
+                    except ValueError:
+                        pass
+
+                cat = "mid-range"
+                nl = name.lower()
+                if any(k in nl for k in ("taj ", "oberoi", "marriott", "hyatt regency", "st regis", "four seasons")):
+                    cat = "luxury"
+                elif any(k in nl for k in ("oyo", "zostel", "fabhotel", "treebo", "hostel")):
+                    cat = "budget"
+
+                all_hotels.append({
+                    "id": f"tavily_hotel_{len(all_hotels)+1}",
+                    "provider": "tavily_search",
+                    "name": name.strip(),
+                    "price": round(price),
+                    "price_per_night": round(price),
+                    "total_price": round(price) * nights,
+                    "currency": get_destination_currency(destination),
+                    "title": title,
+                    "url": url,
+                    "source": "Tavily Web Search",
+                    "location": f"{destination}",
+                    "rating": rating,
+                    "amenities": get_amenities_by_category(cat),
+                    "room_type": "Deluxe Room" if cat != "budget" else "Standard Room",
+                    "category": cat,
+                    "address": f"{name.strip()}, {destination}",
+                    "raw": result,
+                })
+
+                if len(all_hotels) >= 10:
                     break
-                    
+
+            if len(all_hotels) >= 10:
+                break
+
         except Exception as e:
             logging.warning(f"Hotel query failed: {query}, error: {e}")
             continue
-    
-    # Remove duplicates
+
+    # Dedupe by normalised name
     unique_hotels = []
-    seen_names = set()
-    
+    seen = set()
     for hotel in all_hotels:
-        hotel_key = hotel['name'].lower().replace(' ', '').replace('hotel', '').replace('inn', '')
-        if hotel_key not in seen_names and len(hotel_key) > 3:
-            seen_names.add(hotel_key)
-            unique_hotels.append(hotel)
-    
-    # Return only real search results
-    return sorted(unique_hotels, key=lambda x: (-x['rating'], x['price']))[:5]
+        key = re.sub(r"[^a-z0-9]", "", hotel["name"].lower())
+        if key in seen or len(key) < 4:
+            continue
+        seen.add(key)
+        unique_hotels.append(hotel)
+
+    if not unique_hotels:
+        logging.warning(f"No validated hotels for {destination} after filtering noisy Tavily snippets")
+
+    return sorted(unique_hotels, key=lambda x: (-x["rating"], x["price_per_night"]))[:5]
 
 def extract_hotel_details(content: str, title: str, destination: str):
     """
-    Extract specific hotel details from content
+    Secondary extraction from page body. Names are filtered — snippets often contain sentences, not hotel names.
     """
     hotels = []
-    
-    # Look for hotel information patterns
-    hotel_names = re.findall(r'([\w\s]+(?:hotel|resort|inn|lodge|palace|grand|marriott|hilton|hyatt|radisson|oberoi|taj|itc|oyo)[\w\s]*)', content, re.IGNORECASE)
+
+    hotel_names = re.findall(
+        r'([\w\s\']+(?:hotel|resort|inn|lodge|palace|suites)[\w\s\']{0,40})',
+        content,
+        re.IGNORECASE,
+    )
     ratings = re.findall(r'(\d+(?:\.\d+)?)\s*(?:star|★)', content)
-    prices = re.findall(r'(\d{1,2},?\d{3,})', content)
-    
-    # Extract brand hotels
-    brand_hotels = []
-    brands = ["Marriott", "Hilton", "Hyatt", "Radisson", "Oberoi", "Taj", "ITC", "OYO", "Lemon Tree", "Sarovar"]
-    for brand in brands:
-        if brand.lower() in content.lower() or brand.lower() in title.lower():
-            brand_hotels.append(f"{brand} {destination}")
-    
-    # Combine extracted data
-    all_hotel_names = hotel_names + brand_hotels
-    
-    for i, name in enumerate(all_hotel_names[:3]):
-        rating = float(ratings[i]) if i < len(ratings) else 4.0 + (i * 0.2)
-        price = int(prices[i].replace(',', '')) if i < len(prices) else None
-        
-        # Determine category based on name and rating
+    brands = ["Marriott", "Hilton", "Hyatt", "Radisson", "Oberoi", "Taj", "ITC", "OYO", "Lemon Tree", "Sarovar", "Novotel", "Ibis"]
+    brand_hotels = [f"{b} {destination}" for b in brands if b.lower() in content.lower() or b.lower() in title.lower()]
+
+    seen = set()
+    for raw in hotel_names + brand_hotels:
+        name = re.sub(r"\s+", " ", raw).strip()
+        if name.lower() in seen:
+            continue
+        if not is_valid_hotel_name(name):
+            continue
+        seen.add(name.lower())
+
         name_lower = name.lower()
-        if any(keyword in name_lower for keyword in ["taj", "oberoi", "marriott", "hilton", "hyatt", "luxury", "grand", "palace"]):
+        if any(k in name_lower for k in ("taj", "oberoi", "marriott", "hilton", "hyatt", "luxury", "grand", "palace")):
             category = "luxury"
-        elif any(keyword in name_lower for keyword in ["oyo", "budget", "lodge"]):
+        elif any(k in name_lower for k in ("oyo", "budget", "lodge", "zostel", "treebo")):
             category = "budget"
         else:
             category = "mid-range"
-        
+
+        ri = len(hotels)
+        rating = float(ratings[ri]) if ri < len(ratings) else 4.0 + (ri * 0.15)
+        price = extract_hotel_price_per_night_inr(content, title, destination)
+
         hotels.append({
-            "name": name.strip(),
+            "name": name,
             "rating": min(rating, 5.0),
             "price": price,
             "category": category,
-            "location": f"Central {destination}",
+            "location": f"{destination}",
             "amenities": get_amenities_by_category(category),
             "room_type": "Deluxe Room" if category != "budget" else "Standard Room",
-            "address": f"{name.strip()}, {destination}"
+            "address": f"{name}, {destination}",
         })
-    
+        if len(hotels) >= 3:
+            break
+
     return hotels[:3]
 
 def extract_hotel_name(title: str):

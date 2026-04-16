@@ -78,7 +78,9 @@ class TravelPlannerAgent:
                 end_date=end_date,
                 destination=destination,
                 budget=budget,
-                interests=interests
+                interests=interests,
+                origin=origin,
+                travelers=travelers
             )
             
             # Add metadata and user request info

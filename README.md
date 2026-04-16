@@ -1018,3 +1018,13 @@ If you encounter any issues or have questions:
 cd "/Users/sweatha/Downloads/FINAL YEAR PROJECT/Multi AI agent Planner/backend" && source ../venv/bin/activate && uvicorn app:app --reload --port 8000
 
 cd "/Users/sweatha/Downloads/FINAL YEAR PROJECT/Multi AI agent Planner/frontend" && npm run dev
+
+A Multi AI Agent Planner platform that helps businesses automate complex workflows by using multiple specialized AI agents working together.
+
+The system breaks down tasks into smaller components and assigns them to different AI agents such as research agents, planning agents, execution agents, and analysis agents. This enables faster decision-making, reduced manual effort, and improved operational efficiency.
+
+It solves the problem of fragmented tools and inefficient workflows by providing a unified AI-driven system that can plan, execute, and optimize tasks end-to-end.
+
+The unique value proposition is collaborative AI intelligence, where multiple agents coordinate like a team instead of relying on a single AI model.
+
+Target customers include startups, SMEs, and enterprises looking to automate operations, decision-making, and business processes.
